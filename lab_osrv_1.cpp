@@ -1,65 +1,89 @@
-#include <getopt.h>
+#include <cstdlib>
 #include <iostream>
-#include <sys/types.h>
-#include <fcntl.h>
-#include <pthread.h>
+#include <cstring>
 #include <unistd.h>
+#include <cstdio>
+#include <sys/types.h>
+#include <pthread.h>
+#include <fcntl.h>
 #include <vector>
+#include <time.h>
+
+#define MAX_SIZE 5000
 
 using namespace std;
-int SIZE_OF_INPUT;
 
-struct ArgCmd{
-    char* path_to_input;
-    char* path_to_code;
-    int x;
+
+typedef struct
+{
+	int x;
     int a;
     int c;
     int m;
-};
+    
+    char* PathFileInput;
+    char* PathFileOutput;
+}Opt;
 
-struct work {
-    pthread_barrier_t* barrier;
-    char* text;
-    char* output_text;
-    char* pseudorandom_seq;
-    int down_index;
-    int top_index;
-};
-
-void* LCG(void* cmd_argv_ptr)
+typedef struct
 {
-    ArgCmd* cmd_argv = static_cast<ArgCmd*>(cmd_argv_ptr);
-    int x = cmd_argv->x;
-    int a = cmd_argv->a;
-    int c = cmd_argv->c;
-    int m = cmd_argv->m;
+	int x;
+    int a;
+    int c;
+    int m;
+	
+    int count_of_int ;
+}lkgParams;
 
-    int count_of_int = SIZE_OF_INPUT / sizeof(int);
-    int* buff = new int[count_of_int + 1];
-    buff[0] = x;
+typedef struct 
+{
+	int downDiap;
+    int topDiap;
+	char* outMsgText;
+    char* message;
+    char* randomSequence;
+    int size;
+    pthread_barrier_t* barrier;
+}worker;
 
-    for(size_t i = 1; i < count_of_int + 1; i++)
+void* lkg(void* s)
+{
+    lkgParams *param = reinterpret_cast<lkgParams *>(s);
+    int a = param->a;
+    int m = param->m;
+    int c = param->c;
+    int count_of_int  = param->count_of_int ;
+
+    int* buff = new int[count_of_int  / sizeof(int) + 1];
+    buff[0] = param->x;
+
+    for(int i = 1; i < count_of_int  / sizeof(int) + 1; i++)
     {
         buff[i]= (a * buff[i-1] + c) % m;
     }
 
-    char* seq = reinterpret_cast<char *>(buff);
-    return seq;
+    return reinterpret_cast<void *>(buff);
 }
-void* encrypt(void * work_ptr)
-{
-    work* work = static_cast<work*>(work_ptr);
-    int top_index = work->top_index;
-    int down_index = work->down_index;
 
-    while(down_index < top_index)
-    {
-        work->output_text[down_index] = work->pseudorandom_seq[down_index] ^ work->text[down_index];
-        down_index++;
+void* cryptCalc(void * cryptParametrs)
+{
+	
+    worker* param = reinterpret_cast<worker*>(cryptParametrs);
+    int topDiap = param->topDiap;
+	
+    int downDiap = param->downDiap;
+	
+    
+    
+    while(downDiap <= topDiap)
+    { 
+        param->outMsgText[downDiap] = param->randomSequence[downDiap] ^ param->message[downDiap];
+        
+        downDiap++;
+		
     }
 
-    int status = pthread_barrier_wait(work->barrier);
+    int status = pthread_barrier_wait(param->barrier);
     if (status != 0 && status != PTHREAD_BARRIER_SERIAL_THREAD) {
         exit(status);
     }
@@ -67,134 +91,200 @@ void* encrypt(void * work_ptr)
     return nullptr;
 }
 
-int main(int argc, char* argv[]) {
-    if (argc != 13)
+void FreeMemory(char* outMsgText, char* message, char* randomSequence)
+{
+	printf("");
+    delete[] outMsgText;
+    delete[] message;
+
+    if (randomSequence != nullptr)
+        delete[] randomSequence;
+}
+
+int main (int argc, char **argv) 
+{
+    
+    int option;
+	Opt Args = { 0, 0, 0, 0, NULL, NULL};
+	while ((option=getopt(argc, argv,"i:o:x:a:c:m:")) != -1)
+	{
+		switch(option)
+		{
+			case'i':
+				printf("Found argument \"i = %s\".\n", optarg);
+				Args.PathFileInput = optarg;
+				printf("Name successfully written: %s.\n",Args.PathFileInput);
+				break;				
+			case'o':
+				printf("Found argument \"o = %s\".\n", optarg);
+				Args.PathFileOutput = optarg;
+				printf("Name successfully written: %s.\n",Args.PathFileOutput);
+				break;
+			case'x':
+				printf("Found argument \"x = %s\".\n", optarg);
+				Args.x = atoi(optarg);
+				printf("Optvalue successfully written: %d.\n",Args.x);
+				break;
+			case'a':
+				printf("Found argument \"a = %s\".\n", optarg);
+				Args.a = atoi(optarg);
+				printf("Optvalue successfully written: %d.\n",Args.a);
+				break;
+			case'c':
+				printf("Found argument \"c = %s\".\n", optarg);
+				Args.c = atoi(optarg);
+				printf("Optvalue successfully written: %d.\n",Args.c);
+				break;
+			case'm':
+				printf("Found argument \"m = %s\".\n", optarg);
+				Args.m = atoi(optarg);
+				printf("Optvalue successfully written: %d.\n",Args.m);
+				break;
+			case'?':
+				printf("Error found!\n");
+				getchar();
+				exit(1);
+				break;
+		}	
+	}
+
+
+
+    int inputFile = open(Args.PathFileInput, O_RDONLY);
+    if (inputFile == -1)
     {
-        std::cout << "Arguments is not correct" << std::endl;
-        exit(1);
-    }
-    int c;
-    ArgCmd cmd_argv;
-    while ((c = getopt(argc, argv, "i:o:x:a:c:m:")) != -1)
-    {
-        switch (c)
-        {
-            case 'i':
-                cmd_argv.path_to_input = optarg;
-                break;
-            case 'o':
-                cmd_argv.path_to_code = optarg;
-                break;
-            case 'x':
-                cmd_argv.x = atoi(optarg);
-                break;
-            case 'a':
-                cmd_argv.a = atoi(optarg);
-                break;
-            case 'c':
-                cmd_argv.c = atoi(optarg);
-                break;
-            case 'm':
-                cmd_argv.m = atoi(optarg);
-                break;
-            default:
-                break;
-        }
-    }
-    if (optind < argc) {
-        std::cout << "elements weren't recognised" << std::endl;
-        exit(1);
+        printf("File is not opened %s \n",Args.PathFileInput);
+        exit(-1);
     }
 
-    int input_file = open(cmd_argv.path_to_input, O_RDONLY);
-    if (input_file == -1)
+    int fSize = lseek(inputFile, 0, SEEK_END);
+    printf("File size is %d \n",fSize);
+    if(fSize == -1)
     {
-        std::cout << "сant open " << cmd_argv.path_to_input << " file" << std::endl;
-        exit(1);
+        printf("Error with getting file size");
+        exit(-1);
     }
 
-    SIZE_OF_INPUT = lseek(input_file, 0, SEEK_END);
-    if (SIZE_OF_INPUT > 15000)
+    
+    if (fSize == 0)
     {
-        std::cout << "the file is too large "<< std:: endl;
-        exit(1);
-    }
-    lseek(input_file, 0, SEEK_SET);
-
-    char* text = new char[SIZE_OF_INPUT];
-    if(read(input_file, text, SIZE_OF_INPUT) == -1)
-    {
-        std::cout << "the input file cannot be mapped to RAM" << std::endl;
-        exit(1);
+        printf("File is empty \n");
+        exit(-1);
     }
 
-    pthread_t keygen_thread;
-    if (pthread_create(&keygen_thread, NULL, LCG, &cmd_argv) != 0)
+    
+    if (fSize > 5000)
     {
-        std::cout << "cant create a new keygen thread" << std::endl;
-        exit(1);
+        printf("File size is bigger then acceptable %d \n",MAX_SIZE);
+        exit(-1);
+    }
+    
+    
+    char* outMsgText = new char[fSize];
+    char* message = new char[fSize];
+	char* randomSequence = nullptr;
+    
+    lseek(inputFile, 0, SEEK_SET);
+
+    
+    if(read(inputFile, message, fSize) == -1)
+    {
+        printf("Cannot read to buffer");
+        FreeMemory(outMsgText, message, randomSequence);
+        exit(-1);
     }
 
-    char* pseudorandom_seq = nullptr;
-    if(pthread_join(keygen_thread, (void**)&pseudorandom_seq))
+    
+    
+	int availableWorkerThread = sysconf(_SC_NPROCESSORS_ONLN);
+    printf("Currently available processes: %d \n",availableWorkerThread);
+
+    lkgParams lkgParam;
+	
+	lkgParam.x=Args.x;
+    lkgParam.a=Args.a;
+    lkgParam.c=Args.c;
+    lkgParam.m=Args.m;
+    lkgParam.count_of_int  = fSize;
+
+    pthread_t Thread;
+    pthread_t cryptThread[availableWorkerThread];
+
+    if (pthread_create(&Thread, NULL, lkg, &lkgParam) != 0)
     {
-        std::cout << "cant join a keygen thread thread" << std::endl;
-        exit(1);
+        printf("Failed to create a new thread\n");
+        FreeMemory(outMsgText, message, randomSequence);
+        exit(-1);
+    }
+
+    int randomSequenceJoinStatus = pthread_join(Thread, (void**)&randomSequence);
+    if(randomSequenceJoinStatus != 0)
+    {
+        printf("Unable to join randomSequence %d ",randomSequenceJoinStatus);
+        FreeMemory(outMsgText, message, randomSequence);
+        exit(-1);
     }
 
     pthread_barrier_t barrier;
 
-    
-    int number_of_processors = sysconf(_SC_NPROCESSORS_ONLN);
-
-    pthread_barrier_init(&barrier, NULL, number_of_processors + 1);
-    pthread_t crypt_threads[number_of_processors];
-    std::vector <work*> works;
-
-    size_t part_len = SIZE_OF_INPUT / number_of_processors;
-    if (SIZE_OF_INPUT % number_of_processors != 0) {
-        part_len ++;
-    }
-
-    char* output_text = new char[SIZE_OF_INPUT];
-    for(int i = 0; i < number_of_processors; i++)
+    pthread_barrier_init(&barrier, NULL, availableWorkerThread + 1);
+    vector <worker*> workers;
+	
+    for(int i = 0; i < availableWorkerThread; i++)
     {
-        work* work = new work;
+        worker* workerPar = new worker;
 
-        work->barrier = &barrier;
-        work->text = text;
-        work->output_text = output_text;
-        work->pseudorandom_seq = pseudorandom_seq;
-        work->down_index = i * part_len;
+        workerPar->randomSequence = randomSequence;
+		
+        workerPar->size = fSize;
+        workerPar->outMsgText = outMsgText;
+        workerPar->message = message;
+        workerPar->barrier = &barrier;
 
-        if (i == number_of_processors - 1)
-            work->top_index = SIZE_OF_INPUT;
-        else
-            work->top_index = work->down_index + part_len;
-
-        works.push_back(work);
-        pthread_create(&crypt_threads[i], NULL, encrypt, work);
+        int current_len = fSize / availableWorkerThread;
+        int ostatok = fSize % availableWorkerThread;
+		printf("Ostatok %d\n", ostatok);
+		
+		
+        workerPar->downDiap = i * current_len;
+		
+        workerPar->topDiap = (i+1) * current_len + (i == availableWorkerThread - 1 ? ostatok : -1);
+		printf("topDiap %d \t - downDiap %d\n", workerPar->topDiap, workerPar->downDiap);
+    
+        workers.push_back(workerPar);
+        pthread_create(&cryptThread[i], NULL, cryptCalc, workerPar);
     }
+   
 
     int status = pthread_barrier_wait(&barrier);
-    if (status != 0 && status != PTHREAD_BARRIER_SERIAL_THREAD)
+
+    if (status != 0 && status != PTHREAD_BARRIER_SERIAL_THREAD) 
     {
-        std::cout << "some problems" << std::endl;
+        FreeMemory(outMsgText, message, randomSequence);
+        workers.clear();
         exit(status);
     }
 
-    int output_file = open(cmd_argv.path_to_code, O_WRONLY, O_TRUNC);
-    if (output_file == -1)
+    int out;
+    if ((out=open(Args.PathFileOutput, O_WRONLY | O_TRUNC)) == -1) 
     {
-        std::cout << "cant open " << cmd_argv.path_to_code << " file" << std::endl;
-        exit(1);
+        printf("File is not opened %s", Args.PathFileOutput);
     }
+    else
+    {
+	
+        if(write(out, outMsgText, fSize) != fSize)
+            printf("Write fault\n");
 
-    write(output_file, output_text, SIZE_OF_INPUT);
-
-    close(output_file);
+        close(out);
+    }
 
     pthread_barrier_destroy(&barrier);
 
+
+    FreeMemory(outMsgText, message, randomSequence);
+
+    workers.clear();
+    
     return 0;
 }
